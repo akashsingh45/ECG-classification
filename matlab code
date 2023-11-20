@@ -1,0 +1,96 @@
+Matlab code for database creation (image signal to scalogram image conversion):
+
+% program to create CWT image database from ecg signal
+load('ECGData.mat');       %loading ECG database
+data = ECGData.Data;    %getting database
+labels = ECGData.Labels;    %getting labels
+
+ARR = data(1:30,:);     %Taken first 30 recordings
+CHF = data(97:126,:);
+NSR = data(127:156,:);
+signallength = 500;
+
+%Defining filters for CWT with Amor wavelet and 12 filtering per octave
+fb = cwtfilterbank('SignalLength', signallength, 'Wavelet', 'amor', 'VoicesPerOctave', 12);
+
+mkdir('ecgdataset');   %main folder
+mkdir('ecgdataset\arr'); %sub folder
+mkdir('ecgdataset\chf');
+mkdir('ecgdataset\nsr');
+
+ecgtype = {'ARR', 'CHF', 'NSR'};
+
+%Function to convert ECG to image
+ecg2cwtscg(ARR, fb, 'arr', '/Users/akash/Downloads/HB/ecgdataset/arr/');
+ecg2cwtscg(CHF, fb, 'chf', '/Users/akash/Downloads/HB/ecgdataset/chf/');
+ecg2cwtscg(NSR, fb, 'nsr', '/Users/akash/Downloads/HB/ecgdataset/nsr/');
+
+function ecg2cwtscg(ecgdata, cwtfb, ecgtype, folderpath)
+    nos = 10;  % number of signals
+    no1 = 500; % signal length
+    colormap = jet(128);
+
+    % Create the specified directory if it doesn't exist
+    if ~exist(folderpath, 'dir')
+        mkdir(folderpath);
+    end
+    
+    disp(['Processing ' ecgtype ' data.']);
+    
+    for i = 1:size(ecgdata, 1)
+        indx = 0;
+        for k = 1:nos
+            ecgsignal = ecgdata(i, indx+1: indx+no1);
+            cfs = abs(cwtfb.wt(ecgsignal));
+            im = ind2rgb(im2uint8(rescale(cfs)), colormap);
+            filenameindex = (i - 1) * nos + k; % Calculate a unique index for each image
+            filename = fullfile(folderpath, sprintf('%d.jpg', filenameindex));
+            disp(['Saving file: ' filename]);
+            imwrite(imresize(im, [227 227]), filename);
+            indx = indx + no1;
+        end
+    end
+end
+
+Matlab code for training AlexNet (transfer learning):
+
+% Training and validation using AlexNet
+DatasetPath = '/Users/sudinnaik/Downloads/HB/ecgdataset';
+
+% reading images from the image database folder
+images = imageDatastore(DatasetPath, 'IncludeSubfolders', true, 'LabelSource', 'foldernames');
+
+% Distributing images in the set of training and testing
+numTrainFiles = 250;
+[TrainImages, ValidationImages] = splitEachLabel(images, numTrainFiles, 'random');
+
+net = alexnet;  %importing pre-trained alexnet(requires support package)
+layersTransfer = net. Layers(1:end-3); %preserving all layers except last three layers
+
+numClasses = 3; %Number of output classes: ARR, CHF, NSR
+
+%defining layers of alexnet
+layers = [layersTransfer
+    fullyConnectedLayer(numClasses, 'WeightLearnRateFactor', 20, 'BiasLearnRateFactor', 20)
+    softmaxLayer
+    classificationLayer];
+
+%training options
+options = trainingOptions('sgdm', 'MiniBatchSize', 20, 'MaxEpochs', 8, ...
+    'InitialLearnRate', 1e-4, 'Shuffle', 'every-epoch', 'ValidationData', ValidationImages, ...
+    'ValidationFrequency', 10, 'Verbose', false, 'Plots', 'training-progress');
+
+% training the Alexnet
+netTransfer = trainNetwork(TrainImages, layers, options);
+
+%Classifying images
+YPred = classify(netTransfer, ValidationImages);
+YValidation = ValidationImages.Labels;
+accuracy = sum(YPred == YValidation)/numel(YValidation);
+
+%plotting Confusion Matrix
+plotconfusion(YValidation, YPred)
+
+
+
+
